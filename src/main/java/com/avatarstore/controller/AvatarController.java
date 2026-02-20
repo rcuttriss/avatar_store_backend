@@ -2,7 +2,7 @@ package com.avatarstore.controller;
 
 import com.avatarstore.dto.ApiResponse;
 import com.avatarstore.model.Avatar;
-import com.avatarstore.service.SupabaseService;
+import com.avatarstore.service.AvatarService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -17,7 +17,7 @@ import java.util.List;
 @Slf4j
 public class AvatarController {
     
-    private final SupabaseService supabaseService;
+    private final AvatarService avatarService;
     
     @GetMapping
     public ResponseEntity<ApiResponse<List<Avatar>>> getAvatars(
@@ -35,7 +35,7 @@ public class AvatarController {
             }
             
             // Return all avatars
-            List<Avatar> avatars = supabaseService.getAllAvatars();
+            List<Avatar> avatars = avatarService.getAllAvatars();
             return ResponseEntity.ok(ApiResponse.success(avatars, avatars.size()));
         } catch (Exception error) {
             log.error("Error fetching avatars", error);
@@ -47,7 +47,7 @@ public class AvatarController {
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<List<Avatar>>> getAvatarById(@PathVariable Long id) {
         try {
-            Avatar avatar = supabaseService.getAvatarById(id);
+            Avatar avatar = avatarService.getAvatarById(id);
             List<Avatar> avatarList = List.of(avatar);
             return ResponseEntity.ok(ApiResponse.success(avatarList, 1));
         } catch (RuntimeException error) {
@@ -68,7 +68,7 @@ public class AvatarController {
     @GetMapping("/slug/{slug}")
     public ResponseEntity<ApiResponse<List<Avatar>>> getAvatarBySlug(@PathVariable String slug) {
         try {
-            Avatar avatar = supabaseService.getAvatarBySlug(slug);
+            Avatar avatar = avatarService.getAvatarBySlug(slug);
             List<Avatar> avatarList = List.of(avatar);
             return ResponseEntity.ok(ApiResponse.success(avatarList, 1));
         } catch (RuntimeException error) {

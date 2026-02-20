@@ -18,7 +18,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class SupabaseService {
+public class AvatarService {
     
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
