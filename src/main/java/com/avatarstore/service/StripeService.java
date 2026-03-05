@@ -1,6 +1,6 @@
 package com.avatarstore.service;
 
-import com.avatarstore.model.Avatar;
+import com.avatarstore.model.AvatarVersionPair;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
@@ -29,59 +29,14 @@ public class StripeService {
     private String cancelUrl;
 
     /**
-     * Creates a Stripe Checkout Session for a one-time avatar purchase.
-     * The price is read from the Avatar model (server-side), never from the client.
-     *
-     * @param avatar the avatar being purchased (price comes from here)
-     * @param userId the authenticated user's UUID (stored in session metadata for the webhook)
-     * @return the Stripe Checkout Session
+     * Creates a Stripe Checkout Session for one or more avatar version purchases.
+     * Prices are read server-side from AvatarVersion — never trusted from the client.
      */
-    public Session createCheckoutSession(Avatar avatar, UUID userId) throws StripeException {
-        long priceInCents = avatar.getPrice()
-                .multiply(BigDecimal.valueOf(100))
-                .longValueExact();
+    public Session createCheckoutSession(List<AvatarVersionPair> items, UUID userId) throws StripeException {
+        long totalInCents = 0;
 
-        SessionCreateParams params = SessionCreateParams.builder()
-                .setMode(SessionCreateParams.Mode.PAYMENT)
-                .setSuccessUrl(successUrl)
-                .setCancelUrl(cancelUrl)
-                .putMetadata("userId", userId.toString())
-                .putMetadata("avatarId", avatar.getId().toString())
-                .addLineItem(
-                        SessionCreateParams.LineItem.builder()
-                                .setQuantity(1L)
-                                .setPriceData(
-                                        SessionCreateParams.LineItem.PriceData.builder()
-                                                .setCurrency("usd")
-                                                .setUnitAmount(priceInCents)
-                                                .setProductData(
-                                                        SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                                                .setName(avatar.getName())
-                                                                .setDescription(avatar.getShortDescription())
-                                                                .build()
-                                                )
-                                                .build()
-                                )
-                                .build()
-                )
-                .build();
-
-        Session session = Session.create(params);
-        log.info("Created Stripe Checkout Session: sessionId={}, userId={}, avatarId={}, amount={}",
-                session.getId(), userId, avatar.getId(), priceInCents);
-        return session;
-    }
-
-    public Session createCheckoutSession(List<Avatar> avatars, UUID userId) throws StripeException {
-        long priceInCents = 0;
-        for (Avatar a : avatars) {
-            priceInCents += a.getPrice()
-                    .multiply(BigDecimal.valueOf(100))
-                    .longValueExact();
-        }
-
-        String avatarIdsStr = avatars.stream()
-                .map(a -> a.getId().toString())
+        String versionIdsStr = items.stream()
+                .map(i -> i.version().getId().toString())
                 .reduce((a, b) -> a + "," + b)
                 .orElse("");
 
@@ -90,22 +45,25 @@ public class StripeService {
                 .setSuccessUrl(successUrl)
                 .setCancelUrl(cancelUrl)
                 .putMetadata("userId", userId.toString())
-                .putMetadata("avatarIdsStr", avatarIdsStr);
+                .putMetadata("versionIds", versionIdsStr);
 
+        for (AvatarVersionPair item : items) {
+            long priceInCents = item.version().getPrice()
+                    .multiply(BigDecimal.valueOf(100))
+                    .longValueExact();
+            totalInCents += priceInCents;
 
-        for (Avatar a : avatars) {
-            // For multiple items, we can add multiple line items to the session.
             paramsBuilder.addLineItem(
                     SessionCreateParams.LineItem.builder()
                             .setQuantity(1L)
                             .setPriceData(
                                     SessionCreateParams.LineItem.PriceData.builder()
                                             .setCurrency("usd")
-                                            .setUnitAmount(a.getPrice().multiply(BigDecimal.valueOf(100)).longValueExact())
+                                            .setUnitAmount(priceInCents)
                                             .setProductData(
                                                     SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                                            .setName(a.getName())
-                                                            .setDescription(a.getShortDescription())
+                                                            .setName(item.avatar().getName() + " - " + item.version().getName())
+                                                            .setDescription(item.version().getDescription())
                                                             .build()
                                             )
                                             .build()
@@ -113,10 +71,10 @@ public class StripeService {
                             .build()
             );
         }
-        SessionCreateParams params = paramsBuilder.build();
-        Session session = Session.create(params);
-        log.info("Created Stripe Checkout Session: sessionId={}, userId={}, avatarIds={}, amount={}",
-                session.getId(), userId, avatarIdsStr, priceInCents);
+
+        Session session = Session.create(paramsBuilder.build());
+        log.info("Created Stripe Checkout Session: sessionId={}, userId={}, versionIds={}, total={}",
+                session.getId(), userId, versionIdsStr, totalInCents);
         return session;
     }
 

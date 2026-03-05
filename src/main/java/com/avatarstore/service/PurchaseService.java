@@ -1,5 +1,6 @@
 package com.avatarstore.service;
 
+import com.avatarstore.dto.PurchasedItem;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -34,148 +35,93 @@ public class PurchaseService {
      * Returns true if the user has a purchase record for the given avatar.
      * Uses service role so RLS does not block the check.
      */
-    public boolean hasPurchased(UUID userId, Long avatarId) {
-        if (userId == null || avatarId == null) {
-            return false;
-        }
-        String base = supabaseUrl != null ? supabaseUrl.trim() : "";
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        String url = base + "/rest/v1/purchases?user_id=eq." + userId + "&avatar_id=eq." + avatarId + "&select=id&limit=1";
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("apikey", serviceRoleKey);
-        headers.set("Authorization", "Bearer " + serviceRoleKey);
-        headers.set("Content-Type", "application/json");
-        HttpEntity<String> entity = new HttpEntity<>(headers);
+    public boolean hasPurchased(UUID userId, Long versionId) {
+        if (userId == null || versionId == null) return false;
+        String base = baseUrl();
+        String url = base + "/rest/v1/purchases?user_id=eq." + userId + "&avatar_version_id=eq." + versionId + "&select=id&limit=1";
+        HttpEntity<String> entity = new HttpEntity<>(createHeaders());
         try {
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-            if (response.getBody() == null || response.getBody().trim().isEmpty()) {
-                log.debug("No purchase record for user={}, avatarId={}", userId, avatarId);
-                return false;
-            }
+            if (response.getBody() == null || response.getBody().trim().isEmpty()) return false;
             List<Map<String, Object>> rows = objectMapper.readValue(response.getBody(), new TypeReference<>() {});
-            boolean found = rows != null && !rows.isEmpty();
-            if (!found) {
-                log.debug("No purchase record for user={}, avatarId={}", userId, avatarId);
-            }
-            return found;
+            return rows != null && !rows.isEmpty();
         } catch (Exception e) {
-            log.warn("Failed to check purchase: user={}, avatarId={}", userId, avatarId, e);
+            log.warn("Failed to check purchase: user={}, versionId={}", userId, versionId, e);
             return false;
         }
     }
 
     /**
-     * Inserts a purchase record without a Stripe session ID.
-     * Delegates to the full method with a null session ID.
+     * Bulk-inserts purchase records for multiple versions in a single Supabase call.
      */
-    public boolean recordPurchase(UUID userId, Long avatarId) {
-        return recordPurchase(userId, avatarId, null);
-    }
-
-    /**
-     * Inserts a purchase record for the given user and avatar,
-     * including the Stripe Checkout Session ID for audit trail.
-     *
-     * @param userId          the user's UUID (must exist in auth.users)
-     * @param avatarId        the avatar id (must exist in avatars)
-     * @param stripeSessionId the Stripe Checkout Session ID (nullable for non-Stripe flows)
-     * @return true if the row was inserted, false on failure
-     */
-    public boolean recordPurchase(UUID userId, Long avatarId, String stripeSessionId) {
-        if (userId == null || avatarId == null) {
-            return false;
-        }
-        String base = supabaseUrl != null ? supabaseUrl.trim() : "";
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        String url = base + "/rest/v1/purchases";
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("apikey", serviceRoleKey);
-        headers.set("Authorization", "Bearer " + serviceRoleKey);
-        headers.set("Content-Type", "application/json");
-        headers.set("Prefer", "return=minimal");
-
-        String body;
-        if (stripeSessionId != null && !stripeSessionId.isBlank()) {
-            body = String.format(
-                    "{\"user_id\":\"%s\",\"avatar_id\":%d,\"stripe_session_id\":\"%s\"}",
-                    userId, avatarId, stripeSessionId);
-        } else {
-            body = String.format("{\"user_id\":\"%s\",\"avatar_id\":%d}", userId, avatarId);
-        }
-
-        HttpEntity<String> entity = new HttpEntity<>(body, headers);
-        try {
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
-            if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("Recorded purchase: user={}, avatarId={}, stripeSessionId={}",
-                        userId, avatarId, stripeSessionId);
-                return true;
-            }
-            log.warn("Failed to record purchase: status={}", response.getStatusCode());
-            return false;
-        } catch (Exception e) {
-            log.warn("Failed to record purchase: user={}, avatarId={}", userId, avatarId, e);
-            return false;
-        }
-    }
-
-    /**
-     * Bulk-inserts purchase records for multiple avatars in a single Supabase call.
-     * PostgREST accepts a JSON array, inserting all rows in one transaction.
-     *
-     * @param userId          the user's UUID
-     * @param avatarIds       list of avatar IDs to record purchases for
-     * @param stripeSessionId the Stripe Checkout Session ID (nullable)
-     * @return true if all rows were inserted, false on failure
-     */
-    public boolean recordPurchaseList(UUID userId, List<Long> avatarIds, String stripeSessionId) {
-        if (userId == null || avatarIds == null || avatarIds.isEmpty()) {
-            return false;
-        }
-        String base = supabaseUrl != null ? supabaseUrl.trim() : "";
-        if (base.endsWith("/")) {
-            base = base.substring(0, base.length() - 1);
-        }
-        String url = base + "/rest/v1/purchases";
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("apikey", serviceRoleKey);
-        headers.set("Authorization", "Bearer " + serviceRoleKey);
-        headers.set("Content-Type", "application/json");
-        headers.set("Prefer", "return=minimal");
+    public boolean recordPurchases(UUID userId, List<Long> avatarIds, List<Long> versionIds, String stripeSessionId) {
+        if (userId == null || versionIds == null || versionIds.isEmpty()) return false;
 
         StringBuilder sb = new StringBuilder("[");
-        for (int i = 0; i < avatarIds.size(); i++) {
+        for (int i = 0; i < versionIds.size(); i++) {
             if (i > 0) sb.append(",");
             if (stripeSessionId != null && !stripeSessionId.isBlank()) {
                 sb.append(String.format(
-                        "{\"user_id\":\"%s\",\"avatar_id\":%d,\"stripe_session_id\":\"%s\"}",
-                        userId, avatarIds.get(i), stripeSessionId));
+                        "{\"user_id\":\"%s\",\"avatar_id\":%d,\"avatar_version_id\":%d,\"stripe_session_id\":\"%s\"}",
+                        userId, avatarIds.get(i), versionIds.get(i), stripeSessionId));
             } else {
                 sb.append(String.format(
-                        "{\"user_id\":\"%s\",\"avatar_id\":%d}",
-                        userId, avatarIds.get(i)));
+                        "{\"user_id\":\"%s\",\"avatar_id\":%d,\"avatar_version_id\":%d}",
+                        userId, avatarIds.get(i), versionIds.get(i)));
             }
         }
         sb.append("]");
-        String body = sb.toString();
 
-        HttpEntity<String> entity = new HttpEntity<>(body, headers);
+        HttpHeaders headers = createHeaders();
+        headers.set("Prefer", "return=minimal");
+        HttpEntity<String> entity = new HttpEntity<>(sb.toString(), headers);
         try {
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.POST, entity, String.class);
+            ResponseEntity<String> response = restTemplate.exchange(baseUrl() + "/rest/v1/purchases", HttpMethod.POST, entity, String.class);
             if (response.getStatusCode().is2xxSuccessful()) {
-                log.info("Recorded {} purchases: user={}, avatarIds={}, stripeSessionId={}",
-                        avatarIds.size(), userId, avatarIds, stripeSessionId);
+                log.info("Recorded {} purchases: user={}, versionIds={}", versionIds.size(), userId, versionIds);
                 return true;
             }
             log.warn("Failed to record purchases: status={}", response.getStatusCode());
             return false;
         } catch (Exception e) {
-            log.warn("Failed to record purchases: user={}, avatarIds={}", userId, avatarIds, e);
+            log.warn("Failed to record purchases: user={}, versionIds={}", userId, versionIds, e);
             return false;
         }
+    }
+
+    /**
+     * Returns all purchases for a user with avatar and version details via PostgREST join.
+     */
+    public List<PurchasedItem> getPurchases(UUID userId) {
+        if (userId == null) return List.of();
+        String url = baseUrl()
+                + "/rest/v1/purchases"
+                + "?select=id,created_at,avatar_id,avatar_version_id,stripe_session_id"
+                + ",avatars(id,name,slug,thumbnail_url,poster_url)"
+                + ",avatar_versions(id,name,price,description,blob_container_name,blob_file_path,blob_file_name)"
+                + "&user_id=eq." + userId
+                + "&order=created_at.desc";
+        HttpEntity<String> entity = new HttpEntity<>(createHeaders());
+        try {
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            if (response.getBody() == null || response.getBody().trim().isEmpty()) return List.of();
+            return objectMapper.readValue(response.getBody(), new TypeReference<List<PurchasedItem>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to fetch purchases for user={}", userId, e);
+            return List.of();
+        }
+    }
+
+    private String baseUrl() {
+        String base = supabaseUrl != null ? supabaseUrl.trim() : "";
+        return base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
+    }
+
+    private HttpHeaders createHeaders() {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("apikey", serviceRoleKey);
+        headers.set("Authorization", "Bearer " + serviceRoleKey);
+        headers.set("Content-Type", "application/json");
+        return headers;
     }
 }

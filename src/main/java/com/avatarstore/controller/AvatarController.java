@@ -2,6 +2,7 @@ package com.avatarstore.controller;
 
 import com.avatarstore.dto.ApiResponse;
 import com.avatarstore.model.Avatar;
+import com.avatarstore.model.AvatarVersion;
 import com.avatarstore.service.AvatarService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,20 +21,8 @@ public class AvatarController {
     private final AvatarService avatarService;
     
     @GetMapping
-    public ResponseEntity<ApiResponse<List<Avatar>>> getAvatars(
-            @RequestParam(required = false) Long id,
-            @RequestParam(required = false) String slug) {
-        
+    public ResponseEntity<ApiResponse<List<Avatar>>> getAvatars() {
         try {
-            // Handle query parameters for backward compatibility
-            if (id != null) {
-                return getAvatarById(id);
-            }
-            
-            if (slug != null) {
-                return getAvatarBySlug(slug);
-            }
-            
             // Return all avatars
             List<Avatar> avatars = avatarService.getAllAvatars();
             return ResponseEntity.ok(ApiResponse.success(avatars, avatars.size()));
@@ -44,27 +33,18 @@ public class AvatarController {
         }
     }
     
-    @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<List<Avatar>>> getAvatarById(@PathVariable Long id) {
+    @GetMapping("/{id}/versions")
+    public ResponseEntity<ApiResponse<List<AvatarVersion>>> getVersionsByAvatarId(@PathVariable Long id) {
         try {
-            Avatar avatar = avatarService.getAvatarById(id);
-            List<Avatar> avatarList = List.of(avatar);
-            return ResponseEntity.ok(ApiResponse.success(avatarList, 1));
-        } catch (RuntimeException error) {
-            log.error("Error fetching avatar by id: {}", id, error);
-            if (error.getMessage().contains("not found")) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(ApiResponse.<List<Avatar>>error("Avatar not found"));
-            }
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.<List<Avatar>>error("Failed to fetch avatar"));
+            List<AvatarVersion> versions = avatarService.getVersionsByAvatarId(id);
+            return ResponseEntity.ok(ApiResponse.success(versions, versions.size()));
         } catch (Exception error) {
-            log.error("Error fetching avatar by id: {}", id, error);
+            log.error("Error fetching versions for avatar id: {}", id, error);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(ApiResponse.<List<Avatar>>error("Failed to fetch avatar"));
+                    .body(ApiResponse.<List<AvatarVersion>>error("Failed to fetch avatar versions"));
         }
     }
-    
+
     @GetMapping("/slug/{slug}")
     public ResponseEntity<ApiResponse<List<Avatar>>> getAvatarBySlug(@PathVariable String slug) {
         try {

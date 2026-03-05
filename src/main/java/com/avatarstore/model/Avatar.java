@@ -5,7 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 
 @Data
@@ -22,27 +21,11 @@ public class Avatar {
     @JsonProperty("thumbnail_url")
     private String thumbnailUrl;
     
-    private BigDecimal price;
     private String description;
     
     @JsonProperty("short_description")
     private String shortDescription;
-    
-    @JsonProperty("poly_count")
-    private Integer polyCount;
-    
-    @JsonProperty("mat_count")
-    private Integer matCount;
-    
-    @JsonProperty("mesh_count")
-    private Integer meshCount;
-    
-    @JsonProperty("texture_memory")
-    private String textureMemory;
-    
-    @JsonProperty("download_size")
-    private String downloadSize;
-    
+
     @JsonProperty("is_active")
     private Boolean isActive;
     
@@ -51,16 +34,7 @@ public class Avatar {
     
     private String category;
     private String platform;
-    
-    @JsonProperty("blob_container_name")
-    private String blobContainerName;
-    
-    @JsonProperty("blob_file_path")
-    private String blobFilePath;
-    
-    @JsonProperty("blob_file_name")
-    private String blobFileName;
-    
+
     @JsonProperty("created_at")
     private OffsetDateTime createdAt;
     

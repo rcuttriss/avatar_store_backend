@@ -3,6 +3,7 @@ package com.avatarstore.controller;
 import com.avatarstore.config.SupabaseJwtHelper;
 import com.avatarstore.dto.ApiResponse;
 import com.avatarstore.model.Avatar;
+import com.avatarstore.model.AvatarVersion;
 import com.avatarstore.service.AvatarService;
 import com.avatarstore.service.PurchaseService;
 import com.avatarstore.service.SupabaseStorageService;
@@ -38,22 +39,24 @@ public class StorageController {
      * Download avatar file. Requires Authorization: Bearer &lt;access_token&gt;.
      * Only users who have purchased this avatar may download. Use slug or avatarId.
      */
-    @GetMapping("/download/avatar")
+    @GetMapping("/download")
     public ResponseEntity<byte[]> downloadAvatar(
             @RequestHeader(value = "Authorization", required = false) String authorization,
-            @RequestParam(value = "avatarId", required = false) Long avatarId) {
+            @RequestParam("versionId") Long versionId) {
+
         Optional<UUID> userIdOpt = supabaseJwtHelper.getUserIdFromAuthorization(authorization);
         if (userIdOpt.isEmpty()) {
             return ResponseEntity.status(401).build();
         }
 
-        if (!purchaseService.hasPurchased(userIdOpt.get(), avatarId)) {
-            log.debug("Download forbidden: no purchase found for user={}, avatarId={} (slug={})", userIdOpt.get(), avatarId);
+        if (!purchaseService.hasPurchased(userIdOpt.get(), versionId)) {
+            log.debug("Download forbidden: no purchase found for user={}, versionId={}", userIdOpt.get(), versionId);
             return ResponseEntity.status(403).build();
         }
-        Avatar avatar;
+
+        AvatarVersion version;
         try {
-            avatar = avatarService.getAvatarById(avatarId);
+            version = avatarService.getVersionById(versionId);
         } catch (RuntimeException e) {
             if (e.getMessage() != null && e.getMessage().contains("not found")) {
                 return ResponseEntity.notFound().build();
@@ -61,13 +64,12 @@ public class StorageController {
             throw e;
         }
 
-        String bucket = avatar.getBlobContainerName();
-        String path = avatar.getBlobFilePath();
-        byte[] bytes = supabaseStorageService.downloadFile(bucket, path);
+        byte[] bytes = supabaseStorageService.downloadFile(version.getBlobContainerName(), version.getBlobFilePath());
         if (bytes == null || bytes.length == 0) {
             return ResponseEntity.notFound().build();
         }
-        String filename = avatar.getBlobFileName() != null ? avatar.getBlobFileName() : (avatar.getSlug() + ".vrca");
+
+        String filename = version.getBlobFileName() != null ? version.getBlobFileName() : ("avatar-version-" + versionId + ".vrca");
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         headers.setContentDispositionFormData("attachment", filename);

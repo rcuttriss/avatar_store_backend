@@ -1,6 +1,7 @@
 package com.avatarstore.service;
 
 import com.avatarstore.model.Avatar;
+import com.avatarstore.model.AvatarVersion;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -58,7 +59,7 @@ public class AvatarService {
     
     public List<Avatar> getAllAvatars() {
         try {
-            String url = buildUrl("/rest/v1/avatars?order=created_at.desc");
+            String url = buildUrl("/rest/v1/avatars?order=id.asc");
             log.debug("Fetching avatars from URL: {}", url);
             HttpEntity<String> entity = new HttpEntity<>(createHeaders());
             ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
@@ -105,6 +106,48 @@ public class AvatarService {
         }
     }
     
+    public AvatarVersion getVersionById(Long versionId) {
+        try {
+            String url = buildUrl("/rest/v1/avatar_versions?id=eq." + versionId);
+            HttpEntity<String> entity = new HttpEntity<>(createHeaders());
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+
+            if (response.getBody() == null || response.getBody().trim().isEmpty()) {
+                throw new RuntimeException("Avatar version not found");
+            }
+
+            List<AvatarVersion> versions = objectMapper.readValue(response.getBody(), new TypeReference<List<AvatarVersion>>() {});
+            if (versions.isEmpty()) throw new RuntimeException("Avatar version not found");
+            return versions.get(0);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error fetching avatar version {}: {}", versionId, e.getMessage(), e);
+            throw new RuntimeException("Failed to fetch avatar version: " + e.getMessage(), e);
+        }
+    }
+
+    public List<AvatarVersion> getVersionsByAvatarId(Long avatarId) {
+        try {
+            String url = buildUrl("/rest/v1/avatar_versions?avatar_id=eq." + avatarId + "&order=sort_order.asc");
+            log.debug("Fetching versions for avatar {} from URL: {}", avatarId, url);
+            HttpEntity<String> entity = new HttpEntity<>(createHeaders());
+            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+
+            if (response.getBody() == null || response.getBody().trim().isEmpty()) {
+                return List.of();
+            }
+
+            return objectMapper.readValue(response.getBody(), new TypeReference<List<AvatarVersion>>() {});
+        } catch (IllegalStateException e) {
+            log.error("Configuration error: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Error fetching versions for avatar {}: {}", avatarId, e.getMessage(), e);
+            throw new RuntimeException("Failed to fetch avatar versions: " + e.getMessage(), e);
+        }
+    }
+
     public Avatar getAvatarBySlug(String slug) {
         try {
             String encodedSlug = java.net.URLEncoder.encode(slug, java.nio.charset.StandardCharsets.UTF_8);
